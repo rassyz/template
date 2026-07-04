@@ -1,0 +1,45 @@
+services:
+  winnicode:
+    build: ./php
+    image: winnicode_php:latest
+    container_name: winnicode
+    hostname: "winnicode"
+    volumes:
+      - ./src:/var/www/html
+      - ./php/www.conf:/usr/local/etc/php-fpm.d/www.conf
+    working_dir: /var/www/html
+    depends_on:
+      - winnicode_db
+
+  winnicode_db:
+    image: mariadb:10.11
+    container_name: winnicode_db
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "13306:3306"
+    volumes:
+      - ./db/data:/var/lib/mysql
+      - ./db/conf.d:/etc/mysql/conf.d:ro
+    environment:
+      MYSQL_USER: djambred
+      MYSQL_PASSWORD: p455w0rd1!.
+      MYSQL_ROOT_PASSWORD: p455w0rd
+      TZ: Asia/Jakarta
+      SERVICE_TAGS: dev
+      SERVICE_NAME: winnicode_db
+
+  winnicode_nginx:
+    build: ./nginx
+    image: winnicode_nginx:latest
+    container_name: winnicode_nginx
+    hostname: "winnicode_nginx"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./src:/var/www/html
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - winnicode
