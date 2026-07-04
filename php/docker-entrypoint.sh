@@ -6,6 +6,11 @@ echo "🚀 Starting Laravel container setup..."
 APP_DIR="/var/www/html"
 ENV_FILE="$APP_DIR/.env"
 
+# Default:
+# true  = keep Docker development values synchronized into Laravel .env
+# false = do not touch existing Laravel .env except APP_KEY generation
+AUTO_SYNC_ENV="${AUTO_SYNC_ENV:-true}"
+
 get_env() {
   local key="$1"
   local default_value="${2:-}"
@@ -26,102 +31,129 @@ get_dotenv_value() {
   fi
 }
 
+escape_env_value() {
+  printf "%s" "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+set_env_value() {
+  local key="$1"
+  local value="$2"
+  local quoted_value
+
+  quoted_value="\"$(escape_env_value "$value")\""
+
+  touch "$ENV_FILE"
+
+  if grep -qE "^${key}=" "$ENV_FILE"; then
+    sed -i "s|^${key}=.*|${key}=${quoted_value}|" "$ENV_FILE"
+  else
+    printf "\n%s=%s\n" "$key" "$quoted_value" >> "$ENV_FILE"
+  fi
+}
+
+set_env_value_raw() {
+  local key="$1"
+  local value="$2"
+
+  touch "$ENV_FILE"
+
+  if grep -qE "^${key}=" "$ENV_FILE"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+  else
+    printf "\n%s=%s\n" "$key" "$value" >> "$ENV_FILE"
+  fi
+}
+
+sync_laravel_env_for_docker() {
+  echo "📄 Syncing Laravel .env for Docker development..."
+
+  # App
+  set_env_value APP_NAME "$(get_env APP_NAME "Winnicode")"
+  set_env_value_raw APP_ENV "$(get_env APP_ENV "local")"
+  set_env_value_raw APP_KEY "$(get_env APP_KEY "")"
+  set_env_value_raw APP_DEBUG "$(get_env APP_DEBUG "true")"
+  set_env_value APP_TIMEZONE "$(get_env APP_TIMEZONE "Asia/Jakarta")"
+  set_env_value APP_URL "$(get_env APP_URL "https://winnicode.test")"
+  set_env_value ASSET_URL "$(get_env ASSET_URL "https://winnicode.test")"
+  set_env_value_raw DEBUGBAR_ENABLED "$(get_env DEBUGBAR_ENABLED "false")"
+
+  # Locale
+  set_env_value_raw APP_LOCALE "$(get_env APP_LOCALE "en")"
+  set_env_value_raw APP_FALLBACK_LOCALE "$(get_env APP_FALLBACK_LOCALE "en")"
+  set_env_value_raw APP_FAKER_LOCALE "$(get_env APP_FAKER_LOCALE "en_US")"
+
+  # Log
+  set_env_value_raw LOG_CHANNEL "$(get_env LOG_CHANNEL "stack")"
+  set_env_value_raw LOG_STACK "$(get_env LOG_STACK "single")"
+  set_env_value_raw LOG_LEVEL "$(get_env LOG_LEVEL "debug")"
+
+  # Database
+  set_env_value_raw DB_CONNECTION "$(get_env DB_CONNECTION "mariadb")"
+  set_env_value_raw DB_HOST "$(get_env DB_HOST "winnicode_db")"
+  set_env_value_raw DB_PORT "$(get_env DB_PORT "3306")"
+  set_env_value_raw DB_DATABASE "$(get_env DB_DATABASE "$(get_env MYSQL_DATABASE "winnicode")")"
+  set_env_value_raw DB_USERNAME "$(get_env DB_USERNAME "$(get_env MYSQL_USER "rassyz")")"
+
+  # Password is read from Docker environment.
+  # No password is hardcoded inside this script.
+  set_env_value DB_PASSWORD "$(get_env DB_PASSWORD "$(get_env MYSQL_PASSWORD "")")"
+
+  # Session / queue / cache
+  set_env_value_raw SESSION_DRIVER "$(get_env SESSION_DRIVER "database")"
+  set_env_value_raw SESSION_LIFETIME "$(get_env SESSION_LIFETIME "120")"
+  set_env_value_raw SESSION_ENCRYPT "$(get_env SESSION_ENCRYPT "true")"
+  set_env_value_raw SESSION_PATH "$(get_env SESSION_PATH "/")"
+  set_env_value_raw SESSION_DOMAIN "$(get_env SESSION_DOMAIN "null")"
+
+  set_env_value_raw BROADCAST_CONNECTION "$(get_env BROADCAST_CONNECTION "log")"
+  set_env_value_raw FILESYSTEM_DISK "$(get_env FILESYSTEM_DISK "local")"
+  set_env_value_raw QUEUE_CONNECTION "$(get_env QUEUE_CONNECTION "database")"
+  set_env_value_raw CACHE_STORE "$(get_env CACHE_STORE "database")"
+
+  # Redis / mail
+  set_env_value_raw REDIS_CLIENT "$(get_env REDIS_CLIENT "phpredis")"
+  set_env_value_raw REDIS_HOST "$(get_env REDIS_HOST "127.0.0.1")"
+  set_env_value_raw REDIS_PASSWORD "$(get_env REDIS_PASSWORD "null")"
+  set_env_value_raw REDIS_PORT "$(get_env REDIS_PORT "6379")"
+
+  set_env_value_raw MAIL_MAILER "$(get_env MAIL_MAILER "log")"
+  set_env_value_raw MAIL_SCHEME "$(get_env MAIL_SCHEME "null")"
+  set_env_value_raw MAIL_HOST "$(get_env MAIL_HOST "127.0.0.1")"
+  set_env_value_raw MAIL_PORT "$(get_env MAIL_PORT "2525")"
+  set_env_value_raw MAIL_USERNAME "$(get_env MAIL_USERNAME "null")"
+  set_env_value_raw MAIL_PASSWORD "$(get_env MAIL_PASSWORD "null")"
+  set_env_value MAIL_FROM_ADDRESS "$(get_env MAIL_FROM_ADDRESS "hello@example.com")"
+  set_env_value MAIL_FROM_NAME "$(get_env MAIL_FROM_NAME "$(get_env APP_NAME "Winnicode")")"
+
+  # Vite
+  set_env_value VITE_APP_NAME "$(get_env VITE_APP_NAME "$(get_env APP_NAME "Winnicode")")"
+}
+
 # Step 1: Create Laravel project if not already present
 if [ ! -f "$APP_DIR/artisan" ]; then
   echo "📦 Creating Laravel project (fila-starter)..."
-  composer create-project --prefer-dist raugadh/fila-starter^3.0 . --no-interaction
+  composer create-project --prefer-dist raugadh/fila-starter:^3.0 . --no-interaction
 fi
 
-create_default_env() {
-  echo "📄 Creating .env file from container environment variables..."
-
-  cat > "$ENV_FILE" <<EOF
-APP_NAME="$(get_env APP_NAME "Winnicode")"
-APP_ENV=$(get_env APP_ENV "local")
-APP_KEY=$(get_env APP_KEY "")
-APP_DEBUG=$(get_env APP_DEBUG "true")
-APP_TIMEZONE=$(get_env APP_TIMEZONE "Asia/Jakarta")
-APP_URL=$(get_env APP_URL "https://winnicode.test")
-ASSET_URL=$(get_env ASSET_URL "https://winnicode.test")
-DEBUGBAR_ENABLED=$(get_env DEBUGBAR_ENABLED "false")
-
-ASSET_PREFIX=
-# ASSET_PREFIX=/dev/kit/public example in case deployed inside a folder
-
-APP_LOCALE=en
-APP_FALLBACK_LOCALE=en
-APP_FAKER_LOCALE=en_US
-
-APP_MAINTENANCE_DRIVER=file
-# APP_MAINTENANCE_STORE=database
-
-PHP_CLI_SERVER_WORKERS=4
-
-BCRYPT_ROUNDS=12
-
-LOG_CHANNEL=stack
-LOG_STACK=single
-LOG_DEPRECATIONS_CHANNEL=null
-LOG_LEVEL=debug
-
-DB_CONNECTION=$(get_env DB_CONNECTION "mariadb")
-DB_HOST=$(get_env DB_HOST "winnicode_db")
-DB_PORT=$(get_env DB_PORT "3306")
-DB_DATABASE=$(get_env DB_DATABASE "$(get_env MYSQL_DATABASE "winnicode")")
-DB_USERNAME=$(get_env DB_USERNAME "$(get_env MYSQL_USER "rassyz")")
-DB_PASSWORD=$(get_env DB_PASSWORD "$(get_env MYSQL_PASSWORD "")")
-
-SESSION_DRIVER=database
-SESSION_LIFETIME=120
-SESSION_ENCRYPT=true
-SESSION_PATH=/
-SESSION_DOMAIN=null
-
-BROADCAST_CONNECTION=log
-FILESYSTEM_DISK=local
-QUEUE_CONNECTION=database
-
-CACHE_STORE=database
-# CACHE_PREFIX=
-
-MEMCACHED_HOST=127.0.0.1
-
-REDIS_CLIENT=phpredis
-REDIS_HOST=127.0.0.1
-REDIS_PASSWORD=null
-REDIS_PORT=6379
-
-MAIL_MAILER=log
-MAIL_SCHEME=null
-MAIL_HOST=127.0.0.1
-MAIL_PORT=2525
-MAIL_USERNAME=null
-MAIL_PASSWORD=null
-MAIL_FROM_ADDRESS="hello@example.com"
-MAIL_FROM_NAME="$(get_env APP_NAME "Winnicode")"
-
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_DEFAULT_REGION=us-east-1
-AWS_BUCKET=
-AWS_USE_PATH_STYLE_ENDPOINT=false
-
-VITE_APP_NAME="$(get_env APP_NAME "Winnicode")"
-EOF
-}
-
-# Step 2: Ensure that .env file is copied from /php/.env if not already done
+# Step 2: Ensure that .env file exists
 if [ ! -f "$ENV_FILE" ] && [ -f /php/.env ]; then
   echo "📄 Copying .env from /php to /var/www/html"
   cp /php/.env "$ENV_FILE"
+elif [ ! -f "$ENV_FILE" ] && [ -f "$APP_DIR/.env.example" ]; then
+  echo "📄 Creating .env from Laravel .env.example"
+  cp "$APP_DIR/.env.example" "$ENV_FILE"
+elif [ ! -f "$ENV_FILE" ]; then
+  echo "📄 Creating empty .env file"
+  touch "$ENV_FILE"
+else
+  echo "✅ .env file already exists."
 fi
 
-# Step 3: If .env file doesn't exist, create and add necessary environment variables.
-# IMPORTANT: If .env already exists, do not overwrite it.
-if [ ! -f "$ENV_FILE" ]; then
-  create_default_env
+# Step 3: Automatically prepare .env for Docker development without overwriting the whole file
+if [ "$AUTO_SYNC_ENV" = "true" ]; then
+  sync_laravel_env_for_docker
 else
-  echo "✅ .env file already exists. Keeping existing .env without overwriting."
+  echo "✅ AUTO_SYNC_ENV=false. Keeping existing .env values."
 fi
 
 # Step 4: Wait for DB connection (host should match DB_HOST in .env)
