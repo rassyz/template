@@ -4,12 +4,15 @@ services:
     image: winnicode_php:latest
     container_name: winnicode
     hostname: "winnicode"
+    env_file:
+      - ./.env.docker
     volumes:
       - ./src:/var/www/html
       - ./php/www.conf:/usr/local/etc/php-fpm.d/www.conf
     working_dir: /var/www/html
     depends_on:
-      - winnicode_db
+      winnicode_db:
+        condition: service_healthy
 
   winnicode_db:
     image: mariadb:10.11
@@ -18,16 +21,24 @@ services:
     tty: true
     ports:
       - "13306:3306"
+    env_file:
+      - ./.env.docker
     volumes:
       - ./db/data:/var/lib/mysql
       - ./db/conf.d:/etc/mysql/conf.d:ro
     environment:
-      MYSQL_USER: djambred
-      MYSQL_PASSWORD: p455w0rd1!.
-      MYSQL_ROOT_PASSWORD: p455w0rd
-      TZ: Asia/Jakarta
       SERVICE_TAGS: dev
       SERVICE_NAME: winnicode_db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mariadb-admin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   winnicode_nginx:
     build: ./nginx
@@ -42,4 +53,5 @@ services:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       - ./nginx/ssl:/etc/nginx/ssl
     depends_on:
-      - winnicode
+      winnicode:
+        condition: service_started

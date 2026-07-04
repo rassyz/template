@@ -1,5 +1,6 @@
 db/data/*
 */db/data/*
 ../db/data/*
-#src/.env
-#*/src/.env
+.env.docker
+/src/.env
+/db/data
