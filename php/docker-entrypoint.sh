@@ -132,7 +132,7 @@ sync_laravel_env_for_docker() {
 # Step 1: Create Laravel project if not already present
 if [ ! -f "$APP_DIR/artisan" ]; then
   echo "📦 Creating Laravel project (fila-starter)..."
-  composer create-project --prefer-dist raugadh/fila-starter:^3.0 . --no-interaction
+  composer create-project --prefer-dist raugadh/fila-starter:4.0.1 . --no-interaction
 fi
 
 # Step 2: Ensure that .env file exists
@@ -184,6 +184,21 @@ echo "✅ Database is ready!"
 if [ ! -d "$APP_DIR/vendor" ]; then
   echo "📦 Installing composer dependencies..."
   composer install --no-interaction --prefer-dist --optimize-autoloader
+fi
+
+echo "🔎 Discovering Laravel packages..."
+php artisan package:discover --ansi || true
+
+echo "🎨 Upgrading/publishing Filament assets..."
+php artisan filament:upgrade || true
+
+echo "🎨 Upgrading/publishing theme assets..."
+php artisan themes:upgrade || true
+
+echo "🎨 Building frontend assets..."
+if [ -f /var/www/html/package.json ]; then
+  npm install
+  npm run build
 fi
 
 # Step 7: Generate app key if not already present
